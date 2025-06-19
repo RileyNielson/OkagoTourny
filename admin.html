@@ -1,0 +1,409 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Tournament Admin</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/qrcode@1.4.4/build/qrcode.min.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        body { font-family: 'Inter', sans-serif; }
+        .admin-theme { background-color: #111827; color: #d1d5db; }
+        .public-theme { background-color: #111827; background-image: url('images/okago-background.jpg'); background-size: cover; background-position: center; background-attachment: fixed; }
+        .btn { @apply px-4 py-2 rounded-lg font-semibold text-white shadow-sm transition-colors duration-200 disabled:opacity-50 disabled:cursor-not-allowed; }
+        .btn-primary { @apply bg-indigo-600 hover:bg-indigo-700; }
+        .btn-secondary { @apply bg-gray-600 hover:bg-gray-700; }
+        .btn-danger { @apply bg-red-600 hover:bg-red-700; }
+        .btn-warning { @apply bg-yellow-600 hover:bg-yellow-700; }
+        .btn-success { @apply bg-green-600 hover:bg-green-700; }
+        .input-field, .select-field { @apply mt-1 block w-full rounded-lg border-gray-700 bg-gray-900 text-gray-200 shadow-sm focus:border-indigo-500 focus:ring focus:ring-indigo-500 focus:ring-opacity-50 sm:text-sm; }
+        .admin-card { @apply bg-gray-800 shadow-lg rounded-xl overflow-hidden border border-gray-700; }
+        .public-card { @apply bg-gray-900/80 shadow-lg rounded-xl overflow-hidden border border-gray-700; backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); }
+        .toast { @apply fixed top-5 right-5 p-4 rounded-lg text-white shadow-xl transition-transform duration-300 translate-x-full z-50; }
+        .toast.show { @apply translate-x-0; }
+        .sortable { cursor: pointer; user-select: none; }
+        .sortable:hover { color: #fff; }
+        .sort-asc::after { content: ' ▲'; font-size: 0.7em; }
+        .sort-desc::after { content: ' ▼'; font-size: 0.7em; }
+        .modal-overlay { @apply fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center p-4 z-40; }
+        .modal-content { @apply bg-gray-800 text-white rounded-lg shadow-xl p-6 w-full max-w-md; }
+        .modal-overlay.hidden { @apply hidden; }
+        .rank-circle { @apply h-10 w-10 rounded-full flex items-center justify-center font-bold text-white shadow-md flex-shrink-0; }
+        .rank-1 { @apply bg-yellow-500; } .rank-2 { @apply bg-gray-400; } .rank-3 { @apply bg-amber-600; } .rank-other { @apply bg-indigo-600; }
+        .progress-bar-bg { background-color: rgba(255, 255, 255, 0.1); }
+        .progress-bar-fg { background-color: #4f46e5; }
+        .streak { @apply text-base font-bold uppercase px-2 py-1 rounded-full ml-3; }
+        .streak-hot { @apply bg-orange-500/20 text-orange-400; }
+        .streak-cold { @apply bg-blue-500/20 text-blue-400; }
+        .bracket { display: flex; overflow-x: auto; padding: 2rem; scrollbar-width: thin; }
+        .round { display: flex; flex-direction: column; justify-content: space-around; min-width: 250px; list-style: none; padding: 0; margin: 0; }
+        .matchup { display: flex; flex-direction: column; justify-content: center; flex-grow: 1; position: relative; }
+        .bracket-match-card { @apply bg-gray-900/50 p-3 rounded-lg text-left backdrop-blur-sm border border-gray-700 w-full; min-height: 50px; }
+        .bracket-match-card.winner { @apply border-green-400 border-2 font-bold; }
+        .bracket-connector { position: absolute; border: 1px solid #4b5563; border-left: none; right: -25px; width: 25px; }
+        .bracket-connector.line { top: 50%; }
+        .bracket-connector.top { border-bottom: none; height: 50%; top: 0; }
+        .bracket-connector.bottom { border-top: none; height: 50%; top: 50%; }
+        .bracket-connector-space { display: flex; flex-direction: column; justify-content: center; width: 50px; }
+    </style>
+</head>
+<body class="admin-theme p-4 sm:p-6 lg:p-8">
+    <div id="login-section" class="max-w-md mx-auto mt-10 card p-8">
+        <h1 class="text-2xl font-bold text-center text-white mb-6">Admin Login</h1>
+        <form id="login-form">
+            <div>
+                <label for="password" class="block text-sm font-medium text-gray-300">Password</label>
+                <input type="password" id="password" class="input-field" required>
+            </div>
+            <button type="submit" class="btn btn-primary w-full mt-6">Login</button>
+        </form>
+    </div>
+
+    <div id="dashboard-section" class="hidden">
+        <div class="flex flex-col sm:flex-row sm:justify-between sm:items-center mb-6 gap-4">
+            <h1 class="text-2xl sm:text-3xl font-bold text-white">Okägo Dashboard</h1>
+            <div class="flex-shrink-0 flex flex-wrap gap-2">
+                 <a href="./tournaments.html" class="btn btn-primary">Tournament Manager</a>
+                 <button id="recalculate-ranks-btn" class="btn btn-secondary">Recalculate Ranks</button>
+                 <button id="logout-btn" class="btn btn-danger">Logout</button>
+            </div>
+        </div>
+
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-8">
+            <div class="flex flex-col gap-8">
+                <div class="card p-6">
+                    <h2 class="text-xl font-semibold mb-4 text-white">Add New Competitor</h2>
+                    <form id="add-form" class="space-y-4">
+                        <input type="text" id="new-name" placeholder="Competitor's Name" class="input-field" required>
+                        <input type="url" id="new-avatar" placeholder="Avatar Image URL (Optional)" class="input-field">
+                        <button type="submit" class="btn btn-primary w-full h-10">Add</button>
+                    </form>
+                </div>
+                <div class="card p-6">
+                    <h2 class="text-xl font-semibold mb-4 text-white">Tournament Match Results</h2>
+                    <select id="tournament-match-select" class="select-field mb-4"></select>
+                    <div id="tournament-matches-list" class="space-y-4 max-h-96 overflow-y-auto">
+                        <p class="text-gray-400">Select an active tournament to see pending matches.</p>
+                    </div>
+                </div>
+            </div>
+            <div class="card lg:row-span-2">
+                <div id="competitor-list-header" class="hidden md:grid grid-cols-12 gap-4 px-6 py-3 bg-gray-900 border-b border-gray-700">
+                    <div class="col-span-1 sortable text-gray-400" data-sort="id">ID</div>
+                    <div class="col-span-4 sortable text-gray-400" data-sort="name">Name & Avatar</div>
+                    <div class="col-span-3 sortable text-gray-400" data-sort="rank">Rank/Lvl/PIN</div>
+                    <div class="col-span-1 sortable text-gray-400" data-sort="score">Score</div>
+                    <div class="col-span-3 text-gray-400">Actions</div>
+                </div>
+                <div id="competitor-list" class="divide-y divide-gray-700"></div>
+            </div>
+        </div>
+    </div>
+    
+    <div id="toast" class="toast"></div>
+    <div id="nfc-modal" class="modal-overlay hidden">
+         <div class="modal-content">
+            <div class="flex justify-between items-center mb-4">
+                <h2 class="text-xl font-bold" id="nfc-modal-title">NFC Tag Info</h2>
+                <button id="nfc-modal-close" class="text-gray-400 hover:text-white">&times;</button>
+            </div>
+            <p class="text-sm text-gray-400 mb-4">Use your phone to write this URL to a tag.</p>
+            <div class="bg-white p-4 rounded-lg flex justify-center my-6">
+                <canvas id="nfc-qrcode"></canvas>
+            </div>
+            <div class="relative mb-4">
+                <input type="text" id="nfc-url-input" class="input-field bg-gray-700" readonly>
+                <button id="nfc-copy-btn" class="absolute inset-y-0 right-0 px-3 text-sm font-medium text-gray-300 hover:text-indigo-400">Copy</button>
+            </div>
+            <button id="nfc-write-btn" class="btn btn-primary w-full hidden">Write to Tag Directly</button>
+            <p id="nfc-status-msg" class="text-center text-sm text-gray-400 mt-2 h-4"></p>
+        </div>
+    </div>
+
+<script>
+    const API_URL = './admin_api.php';
+    const loginSection = document.getElementById('login-section');
+    const dashboardSection = document.getElementById('dashboard-section');
+    const loginForm = document.getElementById('login-form');
+    const passwordInput = document.getElementById('password');
+    const logoutBtn = document.getElementById('logout-btn');
+    const competitorList = document.getElementById('competitor-list');
+    const addForm = document.getElementById('add-form');
+    const newNameInput = document.getElementById('new-name');
+    const newAvatarInput = document.getElementById('new-avatar');
+    const competitorListHeader = document.getElementById('competitor-list-header');
+    const toast = document.getElementById('toast');
+    const nfcModal = document.getElementById('nfc-modal');
+    const tournamentMatchSelect = document.getElementById('tournament-match-select');
+    const tournamentMatchesList = document.getElementById('tournament-matches-list');
+    const recalculateBtn = document.getElementById('recalculate-ranks-btn');
+    const nfcModalTitle = document.getElementById('nfc-modal-title');
+    const nfcModalCloseBtn = document.getElementById('nfc-modal-close');
+    const nfcQrCanvas = document.getElementById('nfc-qrcode');
+    const nfcUrlInput = document.getElementById('nfc-url-input');
+    const nfcCopyBtn = document.getElementById('nfc-copy-btn');
+    const nfcWriteBtn = document.getElementById('nfc-write-btn');
+    const nfcStatusMsg = document.getElementById('nfc-status-msg');
+    
+    let allCompetitors = [];
+    let sortState = { key: 'rank', asc: true };
+
+    async function apiCall(action, body = {}) {
+        const formData = new FormData();
+        formData.append('action', action);
+        for (const key in body) { formData.append(key, body[key]); }
+        try {
+            const response = await fetch(API_URL, { method: 'POST', body: formData });
+            if (!response.ok) {
+                const errorData = await response.json();
+                throw new Error(errorData.error || `HTTP error! status: ${response.status}`);
+            }
+            return await response.json();
+        } catch (error) { showToast(error.message, 'error'); throw error; }
+    }
+    
+    function showToast(message, type = 'success') {
+        toast.textContent = message;
+        toast.className = `toast ${type === 'success' ? 'toast-success' : 'toast-error'}`;
+        toast.classList.add('show');
+        setTimeout(() => toast.classList.remove('show'), 4000);
+    }
+    
+    function renderCompetitors() {
+        allCompetitors.sort((a, b) => {
+            let valA, valB;
+            if (sortState.key === 'id') {
+                valA = parseInt(a.id.substring(1));
+                valB = parseInt(b.id.substring(1));
+            } else if (sortState.key === 'name') {
+                valA = a.name.toLowerCase();
+                valB = b.name.toLowerCase();
+            } else {
+                valA = parseInt(a[sortState.key]) || 0;
+                valB = parseInt(b[sortState.key]) || 0;
+            }
+            if (valA < valB) return sortState.asc ? -1 : 1;
+            if (valA > valB) return sortState.asc ? 1 : -1;
+            return 0;
+        });
+
+        competitorListHeader.querySelectorAll('.sortable').forEach(th => {
+            th.classList.remove('sort-asc', 'sort-desc');
+            if (th.dataset.sort === sortState.key) th.classList.add(sortState.asc ? 'sort-asc' : 'sort-desc');
+        });
+
+        competitorList.innerHTML = '';
+        allCompetitors.forEach(c => {
+            const competitorEl = document.createElement('div');
+            competitorEl.className = 'p-4 md:p-0';
+            competitorEl.innerHTML = `
+                <div class="md:grid md:grid-cols-12 md:gap-4 md:px-6 md:py-4 items-center">
+                    <div class="font-bold text-gray-400 md:col-span-1"><a href="player.html?id=${c.id}" target="_blank" class="text-indigo-400 hover:underline" title="View Player Profile">${c.id}</a></div>
+                    <div class="md:col-span-4 space-y-2">
+                        <input type="text" value="${c.name}" data-field="name" class="input-field text-sm w-full" placeholder="Name">
+                        <input type="url" value="${c.avatarImage || ''}" data-field="avatarImage" class="input-field text-sm w-full" placeholder="Avatar URL">
+                    </div>
+                    <div class="flex items-center gap-4 mt-2 md:mt-0 md:col-span-3">
+                        <div class="text-center"><div class="text-xs text-gray-400">Rank</div><div class="font-bold text-lg text-white">${c.rank || 'N/A'}</div></div>
+                        <div class="text-center"><div class="text-xs text-gray-400">Level</div><div class="font-bold text-lg text-indigo-400">${c.level}</div></div>
+                        <div class="text-center"><div class="text-xs text-gray-400">PIN</div><div class="font-bold text-lg text-orange-400">${c.pin || 'N/A'}</div></div>
+                    </div>
+                    <div class="flex items-center gap-4 mt-2 md:mt-0 md:col-span-1">
+                        <input type="number" value="${c.score}" data-field="score" class="input-field w-24 text-sm">
+                    </div>
+                    <div class="mt-4 md:mt-0 md:col-span-3 flex gap-2 justify-end">
+                        <button class="btn btn-secondary text-xs py-1 px-2" data-action="tag" data-name="${c.name}" data-id="${c.id}">Tag</button>
+                        <button class="btn btn-success text-xs py-1 px-2" data-action="update" data-id="${c.id}">Save</button>
+                        <button class="btn btn-danger text-xs py-1 px-2" data-action="delete" data-id="${c.id}">Delete</button>
+                    </div>
+                </div>`;
+            competitorList.appendChild(competitorEl);
+        });
+    }
+
+    async function loadDashboard() {
+        try {
+            allCompetitors = await apiCall('get_competitors');
+            renderCompetitors();
+        } catch (error) { console.error('Failed to load competitors:', error); }
+    }
+    
+    async function loadTournamentMatches() {
+        const tournamentId = tournamentMatchSelect.value;
+        if (!tournamentId) {
+            tournamentMatchesList.innerHTML = `<p class="text-gray-400">Select a tournament to see matches.</p>`;
+            return;
+        }
+        try {
+            const data = await apiCall('get_round_pairings', { tournament_id: tournamentId });
+            tournamentMatchesList.innerHTML = '';
+            const currentRound = data.current_round;
+            const pairingsForRound = (data.rounds && data.rounds[currentRound]) ? data.rounds[currentRound] : [];
+            const pendingMatches = pairingsForRound.filter(p => !p.winner_id);
+            if (pendingMatches.length === 0) {
+                tournamentMatchesList.innerHTML = `<p class="text-gray-400">No pending matches for this round.</p>`;
+                return;
+            }
+            pendingMatches.forEach(match => {
+                const matchEl = document.createElement('div');
+                matchEl.className = 'bg-gray-700 p-3 rounded-lg';
+                matchEl.innerHTML = `
+                    <div class="text-center mb-2">
+                        <p class="font-bold text-base text-white">${match.p1_name || 'BYE'}</p>
+                        <p class="text-gray-400 text-xs">vs</p>
+                        <p class="font-bold text-base text-white">${match.p2_name || 'BYE'}</p>
+                    </div>
+                    ${match.p2_name ? `
+                    <div class="grid grid-cols-2 gap-2">
+                        <button class="btn btn-success text-xs" data-action="declare_winner" data-round-match-id="${match.round_match_id}" data-winner-id="${match.player1_id}" data-loser-id="${match.player2_id}">${match.p1_name.split(' ')[0]} Wins</button>
+                        <button class="btn btn-success text-xs" data-action="declare_winner" data-round-match-id="${match.round_match_id}" data-winner-id="${match.player2_id}" data-loser-id="${match.player1_id}">${match.p2_name.split(' ')[0]} Wins</button>
+                    </div>` : ``
+                    }
+                `;
+                tournamentMatchesList.appendChild(matchEl);
+            });
+        } catch (error) { console.error("Could not load tournament matches:", error); }
+    }
+
+    async function populateTournamentSelect() {
+        try {
+            const tournaments = await apiCall('get_tournaments');
+            const activeTournaments = tournaments.filter(t => t.status === 'active');
+            if (activeTournaments.length > 0) {
+                tournamentMatchSelect.innerHTML = `<option value="">Select an active tournament...</option>` + activeTournaments.map(t => `<option value="${t.tournament_id}">${t.name} - Round ${t.current_round}</option>`).join('');
+            } else {
+                tournamentMatchSelect.innerHTML = `<option value="">No active tournaments</option>`;
+            }
+            loadTournamentMatches();
+        } catch(error) { console.error("Could not load tournaments for select:", error); }
+    }
+
+    loginForm.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const btn = e.target.querySelector('button'); btn.disabled = true; btn.textContent = 'Logging in...';
+        try {
+            await apiCall('login', { password: passwordInput.value });
+            await init();
+        } catch (error) { passwordInput.value = ''; showToast('Login Failed', 'error'); } 
+        finally { btn.disabled = false; btn.textContent = 'Login'; }
+    });
+
+    logoutBtn.addEventListener('click', async () => {
+        try { await apiCall('logout'); window.location.reload(); } catch (error) { console.error("Logout failed:", error); }
+    });
+
+    addForm.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        try {
+            const data = await apiCall('add_competitor', { name: newNameInput.value, avatarImage: newAvatarInput.value });
+            showToast(data.message); addForm.reset(); await loadDashboard(); await populateTournamentSelect();
+        } catch (error) { console.error('Failed to add competitor:', error); }
+    });
+
+    recalculateBtn.addEventListener('click', async () => {
+         try {
+            const data = await apiCall('recalculate_ranks');
+            showToast(data.message); loadDashboard();
+        } catch (error) { console.error('Failed to recalculate ranks:', error); }
+    });
+    
+    competitorListHeader.addEventListener('click', (e) => {
+        const key = e.target.dataset.sort;
+        if (!key) return;
+        if (sortState.key === key) { sortState.asc = !sortState.asc; } else { sortState.key = key; sortState.asc = true; }
+        renderCompetitors();
+    });
+
+    competitorList.addEventListener('click', async (e) => {
+        const targetElement = e.target.closest('[data-action]');
+        if (!targetElement) return;
+        const action = targetElement.dataset.action;
+        const competitorEl = targetElement.closest('.md\\:grid');
+        const id = competitorEl.querySelector('[data-action="tag"]').dataset.id;
+        
+        if (action === 'tag') {
+             const name = targetElement.dataset.name;
+             const url = `${window.location.origin}/player.html?id=${id}`;
+             nfcModalTitle.textContent = `NFC Tag for ${name}`;
+             nfcUrlInput.value = url;
+             QRCode.toCanvas(nfcQrCanvas, url, { width: 256 }, function (error) { if (error) console.error(error); });
+             if ('NDEFReader' in window) { nfcWriteBtn.classList.remove('hidden'); nfcStatusMsg.textContent = 'Your browser supports writing tags directly.'; } 
+             else { nfcWriteBtn.classList.add('hidden'); nfcStatusMsg.textContent = 'To write a tag, use an app like NFC Tools.'; }
+             nfcModal.classList.remove('hidden');
+        } else if (action === 'delete') {
+             if (!confirm(`Are you sure you want to delete competitor ${id}? This cannot be undone.`)) return;
+             try {
+                await apiCall('delete_competitor', { id });
+                showToast('Competitor deleted.'); loadDashboard();
+             } catch (error) { console.error('Delete failed:', error); }
+        } else if (action === 'update') {
+            const newName = competitorEl.querySelector('[data-field="name"]').value;
+            const newScore = competitorEl.querySelector('[data-field="score"]').value;
+            const newAvatar = competitorEl.querySelector('[data-field="avatarImage"]').value;
+            const competitor = allCompetitors.find(c => c.id === id);
+            try {
+                const data = await apiCall('update_competitor', { 
+                    id, name: newName, score: newScore, 
+                    wins: competitor.wins, losses: competitor.losses, 
+                    avatarImage: newAvatar 
+                });
+                showToast('Competitor saved.'); 
+            } catch (error) { console.error('Update failed:', error); }
+        }
+    });
+    
+    tournamentMatchSelect.addEventListener('change', loadTournamentMatches);
+    tournamentMatchesList.addEventListener('click', async (e) => {
+        const targetElement = e.target.closest('[data-action="declare_winner"]');
+        if (!targetElement) return;
+        targetElement.parentElement.querySelectorAll('button').forEach(b => { b.disabled = true; b.textContent = 'Recording...'; });
+        try {
+            await apiCall('record_match', { 
+                winner_id: targetElement.dataset.winnerId, 
+                loser_id: targetElement.dataset.loserId, 
+                round_match_id: targetElement.dataset.roundMatchId 
+            });
+            showToast('Match result recorded!');
+            await loadTournamentMatches();
+            await loadDashboard();
+        } catch (error) { console.error("Failed to record tournament match result:", error); }
+    });
+    
+    nfcModalCloseBtn.addEventListener('click', () => nfcModal.classList.add('hidden'));
+    nfcModal.addEventListener('click', (e) => { if (e.target === nfcModal) nfcModal.classList.add('hidden'); });
+    nfcCopyBtn.addEventListener('click', () => {
+        nfcUrlInput.select();
+        document.execCommand('copy');
+        showToast('URL copied to clipboard!');
+    });
+    nfcWriteBtn.addEventListener('click', async () => {
+        const url = nfcUrlInput.value;
+        nfcStatusMsg.textContent = "Writing... Bring tag near your phone's NFC reader.";
+        try {
+            const ndef = new NDEFReader();
+            await ndef.write(url);
+            showToast('Tag written successfully!');
+            nfcStatusMsg.textContent = 'Success! You can remove the tag.';
+        } catch (error) {
+            showToast('Failed to write tag. User cancelled or error occurred.', 'error');
+            nfcStatusMsg.textContent = `Error: ${error.message}`;
+        }
+    });
+
+    async function init() {
+        try {
+            await apiCall('check_status');
+            loginSection.classList.add('hidden');
+            dashboardSection.classList.remove('hidden');
+            await loadDashboard();
+            await populateTournamentSelect();
+        } catch (e) {
+            loginSection.classList.remove('hidden');
+            dashboardSection.classList.add('hidden');
+        }
+    }
+    init();
+</script>
+</body>
+</html>

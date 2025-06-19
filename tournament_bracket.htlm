@@ -1,0 +1,212 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Okägo Tournament Bracket</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        /* This single style block contains all styles for the entire site. */
+        /* It will be included in every HTML file for consistency. */
+        
+        /* --- Base & Fonts --- */
+        body { font-family: 'Inter', sans-serif; }
+
+        /* --- THEMES --- */
+        .admin-theme { background-color: #111827; color: #d1d5db; }
+        .public-theme {
+            background-color: #111827; /* Fallback color */
+            background-image: url('/images/okago-background.jpg'); 
+            background-size: cover; 
+            background-position: center; 
+            background-attachment: fixed;
+        }
+
+        /* --- Common Components --- */
+        .btn { @apply px-4 py-2 rounded-lg font-semibold text-white shadow-sm transition-colors duration-200 disabled:opacity-50 disabled:cursor-not-allowed; }
+        .btn-primary { @apply bg-indigo-600 hover:bg-indigo-700; }
+        .btn-secondary { @apply bg-gray-600 hover:bg-gray-700; }
+        .btn-danger { @apply bg-red-600 hover:bg-red-700; }
+        .btn-warning { @apply bg-yellow-600 hover:bg-yellow-700; }
+        .btn-success { @apply bg-green-600 hover:bg-green-700; }
+
+        .admin-card { @apply bg-gray-800 shadow-lg rounded-xl overflow-hidden border border-gray-700; }
+        .public-card { 
+            @apply bg-gray-900/80 shadow-lg rounded-xl overflow-hidden border border-gray-700;
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+        }
+
+        .input-field, .select-field { @apply mt-1 block w-full rounded-lg border-gray-700 bg-gray-900 text-gray-200 shadow-sm focus:border-indigo-500 focus:ring focus:ring-indigo-500 focus:ring-opacity-50 sm:text-sm; }
+        .toast { @apply fixed top-5 right-5 p-4 rounded-lg text-white shadow-xl transition-transform duration-300 translate-x-full z-50; }
+        .toast.show { @apply translate-x-0; }
+        
+        /* --- Public Page Specific --- */
+        .rank-circle { @apply h-10 w-10 rounded-full flex items-center justify-center font-bold text-white shadow-md flex-shrink-0; }
+        .rank-1 { @apply bg-yellow-500; } 
+        .rank-2 { @apply bg-gray-400; } 
+        .rank-3 { @apply bg-amber-600; } 
+        .rank-other { @apply bg-indigo-600; }
+        .progress-bar-bg { @apply bg-gray-700 rounded-full; }
+        .progress-bar-fg { @apply bg-indigo-600 rounded-full; }
+        .streak { @apply text-base font-bold uppercase px-2 py-1 rounded-full ml-3; }
+        .streak-hot { @apply bg-orange-500/20 text-orange-400; }
+        .streak-cold { @apply bg-blue-500/20 text-blue-400; }
+        .bracket { display: flex; overflow-x: auto; padding: 2rem; scrollbar-width: thin; }
+        .round { display: flex; flex-direction: column; justify-content: space-around; min-width: 250px; list-style: none; padding: 0; margin: 0; }
+        .matchup { display: flex; flex-direction: column; justify-content: center; flex-grow: 1; position: relative; }
+        .bracket-match-card { @apply bg-gray-900/50 p-3 rounded-lg text-left backdrop-blur-sm border border-gray-700 w-full; min-height: 50px; }
+        .bracket-match-card.winner { @apply border-green-400 border-2 font-bold; }
+    </style>
+</head>
+<body class="public-theme p-4 md:p-8">
+    <main class="w-full mx-auto">
+        <img src="images/Untitled design (4).png" alt="Okägo Logo" class="w-48 sm:w-64 mx-auto mb-4">
+        <h1 class="text-3xl sm:text-4xl font-bold text-center text-white mb-4 [text-shadow:_0_2px_4px_rgb(0_0_0_/_50%)]" id="tournament-title">Tournament Bracket</h1>
+        
+        <div class="max-w-md mx-auto mb-8">
+            <label for="tournament-select" class="block text-sm font-medium text-gray-300">Select Tournament</label>
+            <select id="tournament-select" class="select-field"></select>
+        </div>
+
+        <div id="bracket-view" class="card rounded-xl shadow-lg backdrop-blur-xl hidden">
+            <div id="bracket-container" class="bracket"></div>
+            <p id="no-pairings-msg" class="text-center text-gray-400 p-10 hidden">No pairings generated for this tournament yet.</p>
+        </div>
+        <div id="loading" class="text-center text-white text-lg py-10">Loading tournaments...</div>
+    </main>
+<script>
+    const API_URL = 'admin_api.php';
+    const tournamentSelect = document.getElementById('tournament-select');
+    const bracketView = document.getElementById('bracket-view');
+    const bracketContainer = document.getElementById('bracket-container');
+    const noPairingsMsg = document.getElementById('no-pairings-msg');
+    const loadingDiv = document.getElementById('loading');
+    const tournamentTitle = document.getElementById('tournament-title');
+
+    async function apiCall(action, body = {}) {
+        const formData = new FormData();
+        formData.append('action', action);
+        for (const key in body) { formData.append(key, body[key]); }
+        try {
+            const response = await fetch(API_URL, { method: 'POST', body: formData });
+            if (!response.ok) {
+                const errorData = await response.json();
+                throw new Error(errorData.error || `HTTP error! status: ${response.status}`);
+            }
+            return await response.json();
+        } catch (error) {
+            console.error(error);
+            bracketContainer.innerHTML = `<p class="text-red-500 col-span-full text-center p-8">${error.message}</p>`;
+        }
+    }
+    
+    function renderBracket(data) {
+        bracketContainer.innerHTML = '';
+        const rounds = data.rounds;
+        const roundNumbers = Object.keys(rounds).map(Number).sort((a, b) => a - b);
+
+        if (roundNumbers.length === 0) {
+            noPairingsMsg.classList.remove('hidden');
+            return;
+        }
+        noPairingsMsg.classList.add('hidden');
+        tournamentTitle.textContent = `${data.name} - Bracket`;
+
+        roundNumbers.forEach((roundNum, roundIndex) => {
+            const roundMatches = rounds[roundNum];
+            const roundEl = document.createElement('ul');
+            roundEl.className = 'round';
+
+            roundMatches.forEach((pair, matchIndex) => {
+                const matchupEl = document.createElement('li');
+                matchupEl.className = 'matchup';
+                
+                const isBye = !pair.p2_id;
+                const p1Winner = pair.winner_id && pair.winner_id === pair.player1_id;
+                const p2Winner = pair.winner_id && pair.winner_id === pair.player2_id;
+                
+                // FIX: Added text-shadow for better readability
+                const playerNameClass = "font-semibold text-white text-lg [text-shadow:_0_1px_2px_rgb(0_0_0_/_60%)]";
+
+                const player1Html = `<div class="match-card ${p1Winner ? 'winner' : ''}"><span class="${playerNameClass}">${pair.p1_name}</span></div>`;
+                let player2Html = ``;
+
+                if (isBye) {
+                    player2Html = `<div class="match-card italic text-gray-500">BYE</div>`;
+                } else {
+                    player2Html = `<div class="match-card ${p2Winner ? 'winner' : ''}"><span class="${playerNameClass}">${pair.p2_name}</span></div>`;
+                }
+
+                matchupEl.innerHTML = `${player1Html}<div class="h-4"></div>${player2Html}`;
+                
+                if (roundIndex < roundNumbers.length - 1 && !isBye) {
+                    const connector = document.createElement('div');
+                    connector.className = 'connector line';
+                    matchupEl.appendChild(connector);
+                    if (matchIndex % 2 === 0) {
+                        const topConnector = document.createElement('div');
+                        topConnector.className = 'connector top';
+                        matchupEl.appendChild(topConnector);
+                    } else {
+                        const bottomConnector = document.createElement('div');
+                        bottomConnector.className = 'connector bottom';
+                        matchupEl.appendChild(bottomConnector);
+                    }
+                }
+                roundEl.appendChild(matchupEl);
+            });
+            bracketContainer.appendChild(roundEl);
+
+            if (roundIndex < roundNumbers.length - 1) {
+                 const connectorSpace = document.createElement('li');
+                 connectorSpace.className = 'connector-space';
+                 const nextRoundMatchups = rounds[roundNumbers[roundIndex+1]]?.length || 0;
+                 if (nextRoundMatchups > 0) {
+                    const verticalSpacing = (roundMatches.length / nextRoundMatchups - 1) * 62.5;
+                    connectorSpace.style.paddingTop = `${verticalSpacing < 0 ? 0 : verticalSpacing}px`;
+                 }
+                 bracketContainer.appendChild(connectorSpace);
+            }
+        });
+    }
+
+    async function loadPairings(tournamentId) {
+        if (!tournamentId) {
+            bracketView.classList.add('hidden');
+            return;
+        }
+        bracketView.classList.remove('hidden');
+        bracketContainer.innerHTML = `<p class="text-gray-400 text-center p-8">Loading pairings...</p>`;
+        
+        try {
+            const data = await apiCall('get_round_pairings', { tournament_id: tournamentId });
+            if(!data) return;
+            renderBracket(data);
+        } catch(error) {
+            bracketContainer.innerHTML = `<p class="text-red-500 text-center p-8">${error.message}</p>`;
+        }
+    }
+
+    async function init() {
+        try {
+            const tournaments = await apiCall('get_tournaments');
+            loadingDiv.classList.add('hidden');
+            if (tournaments && tournaments.length > 0) {
+                tournamentSelect.innerHTML = tournaments.map(t => `<option value="${t.tournament_id}">${t.name}</option>`).join('');
+                loadPairings(tournamentSelect.value);
+            } else {
+                tournamentSelect.innerHTML = `<option>No active tournaments</option>`;
+                noPairingsMsg.classList.remove('hidden');
+            }
+        } catch(error) {
+             loadingDiv.textContent = "Could not load tournaments.";
+        }
+    }
+
+    tournamentSelect.addEventListener('change', () => loadPairings(tournamentSelect.value));
+    window.onload = init;
+</script>
+</body>
+</html>

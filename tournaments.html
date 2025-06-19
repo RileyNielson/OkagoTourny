@@ -1,0 +1,330 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Tournament Management</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        body { font-family: 'Inter', sans-serif; }
+        .admin-theme { background-color: #111827; color: #d1d5db; }
+        .public-theme { background-color: #111827; background-image: url('images/okago-background.jpg'); background-size: cover; background-position: center; background-attachment: fixed; }
+        .btn { @apply px-4 py-2 rounded-lg font-semibold text-white shadow-sm transition-colors duration-200 disabled:opacity-50 disabled:cursor-not-allowed; }
+        .btn-primary { @apply bg-indigo-600 hover:bg-indigo-700; }
+        .btn-secondary { @apply bg-gray-600 hover:bg-gray-700; }
+        .btn-danger { @apply bg-red-600 hover:bg-red-700; }
+        .btn-warning { @apply bg-yellow-600 hover:bg-yellow-700; }
+        .btn-success { @apply bg-green-600 hover:bg-green-700; }
+        .input-field, .select-field { @apply mt-1 block w-full rounded-lg border-gray-700 bg-gray-900 text-gray-200 shadow-sm focus:border-indigo-500 focus:ring focus:ring-indigo-500 focus:ring-opacity-50 sm:text-sm; }
+        .admin-card { @apply bg-gray-800 shadow-lg rounded-xl overflow-hidden border border-gray-700; }
+        .public-card { @apply bg-gray-900/80 shadow-lg rounded-xl overflow-hidden border border-gray-700; backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); }
+        .toast { @apply fixed top-5 right-5 p-4 rounded-lg text-white shadow-xl transition-transform duration-300 translate-x-full z-50; }
+        .toast.show { @apply translate-x-0; }
+        .sortable { cursor: pointer; user-select: none; }
+        .sortable:hover { color: #fff; }
+        .sort-asc::after { content: ' ▲'; font-size: 0.7em; }
+        .sort-desc::after { content: ' ▼'; font-size: 0.7em; }
+        .modal-overlay { @apply fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center p-4 z-40; }
+        .modal-content { @apply bg-gray-800 text-white rounded-lg shadow-xl p-6 w-full max-w-md; }
+        .modal-overlay.hidden { @apply hidden; }
+        .rank-circle { @apply h-10 w-10 rounded-full flex items-center justify-center font-bold text-white shadow-md flex-shrink-0; }
+        .rank-1 { @apply bg-yellow-500; } .rank-2 { @apply bg-gray-400; } .rank-3 { @apply bg-amber-600; } .rank-other { @apply bg-indigo-600; }
+        .progress-bar-bg { background-color: rgba(255, 255, 255, 0.1); }
+        .progress-bar-fg { background-color: #4f46e5; }
+        .streak { @apply text-base font-bold uppercase px-2 py-1 rounded-full ml-3; }
+        .streak-hot { @apply bg-orange-500/20 text-orange-400; }
+        .streak-cold { @apply bg-blue-500/20 text-blue-400; }
+        .bracket { display: flex; overflow-x: auto; padding: 2rem; scrollbar-width: thin; }
+        .round { display: flex; flex-direction: column; justify-content: space-around; min-width: 250px; list-style: none; padding: 0; margin: 0; }
+        .matchup { display: flex; flex-direction: column; justify-content: center; flex-grow: 1; position: relative; }
+        .bracket-match-card { @apply bg-gray-900/50 p-3 rounded-lg text-left backdrop-blur-sm border border-gray-700 w-full; min-height: 50px; }
+        .bracket-match-card.winner { @apply border-green-400 border-2 font-bold; }
+        .bracket-connector { position: absolute; border: 1px solid #4b5563; border-left: none; right: -25px; width: 25px; }
+        .bracket-connector.line { top: 50%; }
+        .bracket-connector.top { border-bottom: none; height: 50%; top: 0; }
+        .bracket-connector.bottom { border-top: none; height: 50%; top: 50%; }
+        .bracket-connector-space { display: flex; flex-direction: column; justify-content: center; width: 50px; }
+    </style>
+</head>
+<body class="admin-theme p-4 sm:p-6 lg:p-8">
+    <a href="./admin.html" class="inline-block mb-6 text-indigo-400 hover:text-indigo-300 font-semibold">&larr; Back to Main Admin</a>
+    
+    <div id="login-section" class="max-w-md mx-auto mt-10 card p-8">
+        <h1 class="text-2xl font-bold text-center text-white mb-6">Admin Login</h1>
+        <form id="login-form">
+            <div>
+                <label for="password" class="block text-sm font-medium text-gray-300">Password</label>
+                <input type="password" id="password" class="input-field" required>
+            </div>
+            <button type="submit" class="btn btn-primary w-full mt-6">Login</button>
+        </form>
+    </div>
+    
+    <div id="dashboard-section" class="hidden">
+        <h1 class="text-3xl font-bold text-white mb-6">Tournament Management</h1>
+
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-8">
+            <div class="md:col-span-1 space-y-8">
+                <div class="card p-6">
+                    <h2 class="text-xl font-semibold text-white mb-4">Create New Tournament</h2>
+                    <form id="create-tournament-form" class="space-y-4">
+                        <input type="text" id="tournament-name" placeholder="Tournament Name" class="input-field" required>
+                        <button type="submit" class="btn btn-primary w-full">Create</button>
+                    </form>
+                </div>
+                <div class="card">
+                    <div class="flex justify-between items-center p-6 border-b border-gray-700">
+                         <h2 class="text-xl font-semibold text-white">Tournaments</h2>
+                    </div>
+                    <div id="tournament-list" class="divide-y divide-gray-700"></div>
+                </div>
+            </div>
+
+            <div id="tournament-details" class="md:col-span-2 card p-6 hidden">
+                <h2 class="text-2xl font-bold text-white mb-4" id="details-title"></h2>
+                <div id="details-content"><p class="text-gray-400">Select a tournament from the list to see its details.</p></div>
+            </div>
+        </div>
+    </div>
+    
+    <div id="toast" class="toast"></div>
+
+<script>
+    const API_URL = 'admin_api.php';
+    const loginSection = document.getElementById('login-section');
+    const dashboardSection = document.getElementById('dashboard-section');
+    const loginForm = document.getElementById('login-form');
+    const passwordInput = document.getElementById('password');
+    const createTournamentForm = document.getElementById('create-tournament-form');
+    const tournamentNameInput = document.getElementById('tournament-name');
+    const tournamentList = document.getElementById('tournament-list');
+    const tournamentDetails = document.getElementById('tournament-details');
+    const detailsTitle = document.getElementById('details-title');
+    const detailsContent = document.getElementById('details-content');
+    const toast = document.getElementById('toast');
+    
+    let allCompetitors = [];
+    let currentTournament = null;
+
+    async function apiCall(action, body = {}) {
+        const formData = new FormData();
+        formData.append('action', action);
+        for (const key in body) { formData.append(key, body[key]); }
+        try {
+            const response = await fetch(API_URL, { method: 'POST', body: formData });
+            if (!response.ok) {
+                const errorData = await response.json();
+                throw new Error(errorData.error || `HTTP error! status: ${response.status}`);
+            }
+            return await response.json();
+        } catch (error) {
+            showToast(error.message, 'error');
+            throw error;
+        }
+    }
+    
+    function showToast(message, type = 'success') {
+        toast.textContent = message;
+        toast.className = `toast ${type === 'success' ? 'toast-success' : 'toast-error'}`;
+        toast.classList.add('show');
+        setTimeout(() => toast.classList.remove('show'), 4000);
+    }
+
+    async function loadTournaments() {
+        try {
+            const tournaments = await apiCall('get_tournaments');
+            tournamentList.innerHTML = '';
+            if (tournaments.length === 0) {
+                tournamentList.innerHTML = `<p class="p-4 text-sm text-gray-500">No active tournaments found.</p>`;
+            }
+            tournaments.forEach(t => {
+                const tournamentEl = document.createElement('div');
+                tournamentEl.className = 'tournament-item p-4 hover:bg-gray-700 transition-colors group';
+                tournamentEl.dataset.id = t.tournament_id;
+                if(currentTournament && currentTournament.tournament_id == t.tournament_id) {
+                    tournamentEl.classList.add('active');
+                }
+                tournamentEl.innerHTML = `
+                    <div class="flex justify-between items-start">
+                        <div class="cursor-pointer flex-grow" data-action="select_tournament" data-name="${t.name}" data-status="${t.status}">
+                            <p class="font-semibold text-white">${t.name}</p>
+                            <p class="text-xs text-gray-400">Status: <span class="font-bold">${t.status}</span> | Round: ${t.current_round}</p>
+                        </div>
+                        <button data-action="archive_tournament" class="btn btn-warning btn-sm p-1 text-xs opacity-0 group-hover:opacity-100 transition-opacity">Archive</button>
+                    </div>
+                `;
+                tournamentList.appendChild(tournamentEl);
+            });
+        } catch (error) { console.error("Failed to load tournaments:", error); }
+    }
+
+    async function loadTournamentDetails(tournamentId, tournamentName, tournamentStatus) {
+        currentTournament = { tournament_id: tournamentId, name: tournamentName, status: tournamentStatus };
+        
+        document.querySelectorAll('.tournament-item').forEach(el => el.classList.remove('active'));
+        document.querySelector(`.tournament-item[data-id='${tournamentId}']`)?.classList.add('active');
+
+        detailsTitle.textContent = tournamentName;
+        tournamentDetails.classList.remove('hidden');
+        detailsContent.innerHTML = `<p class="text-gray-400">Loading details...</p>`;
+        
+        try {
+            const [details, allPlayers] = await Promise.all([
+                apiCall('get_tournament_details', { tournament_id: tournamentId }),
+                apiCall('get_competitors')
+            ]);
+            
+            allCompetitors = allPlayers;
+            
+            const assignedPlayers = (details && Array.isArray(details.players)) ? details.players : [];
+            let playersHtml = assignedPlayers.map(p => `
+                <li class="flex justify-between items-center p-2">
+                    <span class="text-gray-300">${p.name} (Rank ${p.rank})</span>
+                    <button data-action="remove_player" data-player-id="${p.player_id}" class="text-red-500 hover:text-red-700 text-xs ${tournamentStatus !== 'pending' ? 'hidden' : ''}">Remove</button>
+                </li>
+            `).join('');
+            
+            if (assignedPlayers.length === 0) {
+                 playersHtml = `<li class="text-gray-500 p-2">No players assigned.</li>`;
+            }
+
+            let managementHtml = '';
+            if (tournamentStatus === 'pending') {
+                 managementHtml = `
+                    <div><h3 class="text-lg font-semibold mb-2 text-white">Assign Existing Player</h3><div id="assign-player-form"><input type="text" id="assign-search" placeholder="Search for player to assign..." class="input-field"><div id="assign-results" class="mt-1 border border-gray-600 rounded-md max-h-40 overflow-y-auto bg-gray-900"></div></div></div>
+                    <div><h3 class="text-lg font-semibold mb-2 text-white">Add New Player & Assign</h3><form id="add-and-assign-form" class="space-y-2"><input type="text" id="add-assign-name" placeholder="New Player's Name" class="input-field" required><input type="url" id="add-assign-avatar" placeholder="Avatar URL (Optional)" class="input-field"><button type="submit" class="btn btn-secondary w-full">Create & Assign</button></form></div>
+                    <div class="border-t border-gray-700 pt-6"><button data-action="generate_round" class="btn btn-success w-full">Generate Round 1</button></div>`;
+            } else {
+                const pairingsData = await apiCall('get_round_pairings', { tournament_id: tournamentId });
+                const currentRoundPairings = (pairingsData?.rounds && pairingsData.rounds[pairingsData.current_round]) ? pairingsData.rounds[pairingsData.current_round] : [];
+                let pairingsHtml = currentRoundPairings.map(p => `<li class="p-2 text-gray-300">${p.p1_name} vs ${p.p2_name || 'BYE'}</li>`).join('') || `<li class="p-2 text-gray-500">No pairings available.</li>`;
+                
+                managementHtml = `<div class="text-center">
+                    <p class="text-green-400 font-semibold">Tournament is active (Round ${pairingsData?.round_number || 1}).</p>
+                    <h4 class="text-md font-semibold mt-4 mb-2 text-white">Current Pairings</h4>
+                    <ul class="divide-y divide-gray-600">${pairingsHtml}</ul>
+                    <a href="./tournament_bracket.html" target="_blank" class="block text-center mt-4 btn btn-primary">View Public Bracket</a>
+                </div>`;
+            }
+
+            detailsContent.innerHTML = `<div class="space-y-6">${managementHtml}<div><h3 class="text-lg font-semibold mb-2 text-white">Players in Tournament (${assignedPlayers.length})</h3><ul id="assigned-players-list" class="divide-y divide-gray-700 max-h-60 overflow-y-auto border border-gray-600 rounded-md">${playersHtml}</ul></div></div>`;
+            
+            if (tournamentStatus === 'pending') {
+                document.getElementById('assign-search')?.addEventListener('input', updateAssignResults);
+                updateAssignResults();
+            }
+        } catch(error) {
+            console.error("Failed to load details:", error);
+            detailsContent.innerHTML = `<p class="text-red-500">Could not load details.</p>`;
+        }
+    }
+
+    function updateAssignResults() {
+        const assignedPlayerIds = new Set(Array.from(document.querySelectorAll('#assigned-players-list [data-player-id]')).map(el => el.dataset.playerId));
+        const unassignedPlayers = allCompetitors.filter(p => !assignedPlayerIds.has(p.id));
+        const searchInput = document.getElementById('assign-search');
+        const resultsContainer = document.getElementById('assign-results');
+        if(!searchInput || !resultsContainer) return;
+        const searchTerm = searchInput.value.toLowerCase();
+        const filtered = unassignedPlayers.filter(p => p.name.toLowerCase().includes(searchTerm));
+        resultsContainer.innerHTML = filtered.map(p => `<div class="p-2 text-gray-300 hover:bg-indigo-600 hover:text-white cursor-pointer" data-action="assign_player" data-player-id="${p.id}">${p.name} (Rank ${p.rank})</div>`).join('') || `<div class="p-2 text-gray-500">No players found.</div>`;
+    }
+    
+    createTournamentForm.addEventListener('submit', async (e) => { e.preventDefault(); try { const data = await apiCall('create_tournament', { name: tournamentNameInput.value }); showToast(data.message); tournamentNameInput.value = ''; await loadTournaments(); } catch (error) { console.error("Failed to create tournament:", error); } });
+    
+    tournamentList.addEventListener('click', async (e) => {
+        const targetElement = e.target.closest('[data-action]');
+        if (!targetElement) return;
+        
+        const tournamentItemEl = e.target.closest('.tournament-item');
+        if (!tournamentItemEl) return;
+        
+        const tournamentId = tournamentItemEl.dataset.id;
+        const action = targetElement.dataset.action;
+
+        if (action === 'select_tournament') {
+            loadTournamentDetails(tournamentId, targetElement.dataset.name, targetElement.dataset.status);
+        } else if (action === 'archive_tournament') {
+            try {
+                const data = await apiCall('archive_tournament', { tournament_id: tournamentId });
+                showToast('Tournament archived.');
+                if(currentTournament && currentTournament.tournament_id == tournamentId) {
+                    tournamentDetails.classList.add('hidden');
+                    currentTournament = null;
+                }
+                loadTournaments();
+            } catch (error) { console.error("Failed to archive tournament:", error); }
+        }
+    });
+
+    detailsContent.addEventListener('click', async (e) => {
+        const targetElement = e.target.closest('[data-action]');
+        if (!targetElement) return;
+
+        const action = targetElement.dataset.action;
+        
+        if (action === 'generate_round') {
+             const btn = targetElement; btn.disabled = true; btn.textContent = 'Generating...';
+             try {
+                 const data = await apiCall('generate_round_1', { tournament_id: currentTournament.tournament_id });
+                 showToast(data.message); await loadTournaments(); loadTournamentDetails(currentTournament.tournament_id, currentTournament.name, 'active');
+             } catch(error) { console.error("Failed to generate round:", error); showToast(error.message, 'error'); btn.disabled = false; btn.textContent = 'Generate Round 1'; }
+        } else if (action === 'assign_player') {
+            try { await apiCall('assign_player_to_tournament', { tournament_id: currentTournament.tournament_id, player_id: targetElement.dataset.playerId }); loadTournamentDetails(currentTournament.tournament_id, currentTournament.name, currentTournament.status); } catch(error) { console.error("Failed to assign player:", error); }
+        } else if (action === 'remove_player') {
+            try { await apiCall('remove_player_from_tournament', { tournament_id: currentTournament.tournament_id, player_id: targetElement.dataset.playerId }); loadTournamentDetails(currentTournament.tournament_id, currentTournament.name, currentTournament.status); } catch (error) { console.error("Failed to remove player:", error); }
+        }
+    });
+    
+    detailsContent.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        if (e.target.id === 'add-and-assign-form') {
+            const name = document.getElementById('add-assign-name').value;
+            const avatar = document.getElementById('add-assign-avatar').value;
+            const btn = e.target.querySelector('button'); btn.disabled = true;
+            try {
+                const addResponse = await apiCall('add_competitor', { name: name, avatarImage: avatar });
+                const newId = addResponse.message.split(': ')[1].replace('.', '');
+                await apiCall('assign_player_to_tournament', { tournament_id: currentTournament.tournament_id, player_id: newId });
+                showToast(`New player ${name} created and assigned.`); e.target.reset();
+                loadTournamentDetails(currentTournament.tournament_id, currentTournament.name, currentTournament.status);
+            } catch(error) { console.error("Failed to add and assign player:", error); } finally { btn.disabled = false; }
+        }
+    });
+    
+    loginForm.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const btn = e.target.querySelector('button'); btn.disabled = true; btn.textContent = 'Logging in...';
+        try {
+            const loginResult = await apiCall('login', { password: passwordInput.value });
+            if (loginResult.success) {
+                await init();
+            } else {
+                throw new Error("Login failed");
+            }
+        } catch(error) {
+            passwordInput.value = ''; 
+            showToast('Login Failed. Please check your password.', 'error');
+            console.error('Login failed:', error);
+        } finally {
+            btn.disabled = false;
+            btn.textContent = 'Login';
+        }
+    });
+
+    async function init() {
+        try {
+            await apiCall('check_status');
+            loginSection.classList.add('hidden');
+            dashboardSection.classList.remove('hidden');
+            await loadTournaments();
+        } catch (e) {
+            loginSection.classList.remove('hidden');
+            dashboardSection.classList.add('hidden');
+        }
+    }
+    init();
+</script>
+</body>
+</html>
